@@ -6,7 +6,10 @@ package mr
 // remember to capitalize all names.
 //
 
-import "os"
+import (
+	"os"
+	"time"
+)
 import "strconv"
 
 //
@@ -20,6 +23,45 @@ type ExampleArgs struct {
 
 type ExampleReply struct {
 	Y int
+}
+
+type WorkRecord struct {
+	ID      string
+	Filename string
+	Assigned bool
+	Finished bool
+	StartTime time.Time
+}
+
+type AssignmentRequest struct {
+	WorkerID  string
+	WorkType  string
+}
+
+type AssignmentReply struct {
+	Status    int
+	WorkType  string
+	NReduce   int
+	Record WorkRecord
+}
+
+type FinishRequest struct {
+	ID  string
+	WorkerID string
+	WorkType string
+	locations []string
+}
+
+type FinishResponse struct {
+	Status  int
+}
+
+type HeartbeatRequest struct {
+	WorkerID  string
+}
+
+type HeartbeatResponse struct {
+	Response  string
 }
 
 // Add your RPC definitions here.
