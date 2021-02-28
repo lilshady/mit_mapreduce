@@ -8,6 +8,7 @@ package mr
 
 import (
 	"os"
+	"sync"
 	"time"
 )
 import "strconv"
@@ -27,15 +28,28 @@ type ExampleReply struct {
 
 type WorkRecord struct {
 	ID      string
-	Filename string
+	WorkerID string
+	locations []string
 	Assigned bool
 	Finished bool
 	StartTime time.Time
+	m sync.RWMutex
+}
+
+func (w *WorkRecord) updateAssigned(assigned bool) {
+	w.m.Lock()
+	defer w.m.Unlock()
+	w.Assigned = assigned
+}
+
+func (w *WorkRecord) getAssigned() bool{
+	w.m.RLock()
+	defer w.m.RUnlock()
+	return w.Assigned
 }
 
 type AssignmentRequest struct {
 	WorkerID  string
-	WorkType  string
 }
 
 type AssignmentReply struct {
@@ -61,7 +75,7 @@ type HeartbeatRequest struct {
 }
 
 type HeartbeatResponse struct {
-	Response  string
+	Status  int
 }
 
 // Add your RPC definitions here.
