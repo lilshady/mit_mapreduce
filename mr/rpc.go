@@ -29,6 +29,7 @@ type ExampleReply struct {
 type WorkRecord struct {
 	ID      string
 	WorkerID string
+	Type     string
 	locations []string
 	Assigned bool
 	Finished bool
@@ -54,7 +55,6 @@ type AssignmentRequest struct {
 
 type AssignmentReply struct {
 	Status    int
-	WorkType  string
 	NReduce   int
 	Record WorkRecord
 }
