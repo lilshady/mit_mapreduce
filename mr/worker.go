@@ -16,7 +16,6 @@ import "log"
 import "net/rpc"
 import "hash/fnv"
 
-
 //
 // Map functions return a slice of KeyValue.
 //
@@ -32,6 +31,7 @@ type ByKey []KeyValue
 func (a ByKey) Len() int           { return len(a) }
 func (a ByKey) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
 func (a ByKey) Less(i, j int) bool { return a[i].Key < a[j].Key }
+
 //
 // use ihash(key) % NReduce to choose the reduce
 // task number for each KeyValue emitted by Map.
@@ -42,7 +42,6 @@ func ihash(key string) int {
 	return int(h.Sum32() & 0x7fffffff)
 }
 
-
 //
 // main/mrworker.go calls this function.
 //
@@ -50,9 +49,9 @@ func Worker(mapf func(string, string) []KeyValue,
 	reducef func(string, []string) string) {
 
 	worker := MRWorker{
-		mapFunc: mapf,
+		mapFunc:    mapf,
 		reduceFunc: reducef,
-		id : strconv.Itoa(int(atomic.AddInt32(&IDX, 1))),
+		id:         strconv.Itoa(int(atomic.AddInt32(&IDX, 1))),
 	}
 
 	worker.start()
@@ -63,10 +62,10 @@ func Worker(mapf func(string, string) []KeyValue,
 }
 
 type MRWorker struct {
-	mapFunc func(string, string) []KeyValue
+	mapFunc    func(string, string) []KeyValue
 	reduceFunc func(string, []string) string
-	id string
-	Running  int32
+	id         string
+	Running    int32
 }
 
 func (worker *MRWorker) start() {
@@ -74,18 +73,18 @@ func (worker *MRWorker) start() {
 	atomic.StoreInt32(&worker.Running, 1)
 	go worker.sendHeartBeat()
 
-    for atomic.LoadInt32(&worker.Running) == 1{
+	for atomic.LoadInt32(&worker.Running) == 1 {
 
-    	task, reduceNumber, err := worker.getWorkFromMaster()
-    	if err != nil {
-    		fmt.Println(err)
-    		time.Sleep(1 * time.Second)
-    		continue
+		task, reduceNumber, err := worker.getWorkFromMaster()
+		if err != nil {
+			fmt.Println(err)
+			time.Sleep(1 * time.Second)
+			continue
 		}
-        var request FinishRequest
-    	var reply FinishResponse
-    	if task.Type == "map" {
-    		request = worker.handleMapTask(task, reduceNumber)
+		var request FinishRequest
+		var reply FinishResponse
+		if task.Type == "map" {
+			request = worker.handleMapTask(task, reduceNumber)
 		}
 
 		if task.Type == "reduce" {
@@ -101,7 +100,7 @@ func (worker *MRWorker) start() {
 	}
 }
 
-func (worker *MRWorker) handleMapTask(task *WorkRecord, reduceNumber int) FinishRequest{
+func (worker *MRWorker) handleMapTask(task *WorkRecord, reduceNumber int) FinishRequest {
 
 	filePath := task.locations[0]
 	file, err := os.Open(filePath)
@@ -158,12 +157,12 @@ func (worker *MRWorker) handleReduceTask(task *WorkRecord) FinishRequest {
 			if err != nil {
 				fmt.Printf("unable to marsh %v\n", string(line))
 			}
-			data = append(data,  *kv)
+			data = append(data, *kv)
 		}
 	}
 	sort.Sort(ByKey(data))
 
-	oname := "mr-out-"+ worker.id
+	oname := "mr-out-" + worker.id
 	ofile, _ := os.Create(oname)
 	defer ofile.Close()
 	i := 0
@@ -192,7 +191,7 @@ func (worker *MRWorker) handleReduceTask(task *WorkRecord) FinishRequest {
 	}
 }
 
-func createFileIfNotExist(filename string) (* os.File, error) {
+func createFileIfNotExist(filename string) (*os.File, error) {
 
 	if _, err := os.Stat(filename); os.IsNotExist(err) {
 		return os.Create(filename)
@@ -201,7 +200,7 @@ func createFileIfNotExist(filename string) (* os.File, error) {
 	}
 }
 
-func  (worker *MRWorker) getWorkFromMaster() (*WorkRecord, int, error){
+func (worker *MRWorker) getWorkFromMaster() (*WorkRecord, int, error) {
 
 	request := AssignmentRequest{WorkerID: worker.id}
 	reply := &AssignmentReply{}
@@ -220,17 +219,17 @@ func (worker *MRWorker) sendHeartBeat() {
 	failed := 0
 	for {
 		select {
-		   case <- ticker:
-			   request := HeartbeatRequest{WorkerID: worker.id}
-			   response := HeartbeatResponse{}
-			   result := call("Master.HeartBeat", &request, &response)
-			   if !result {
-			   	failed = failed + 1
-			   }
-			   if failed > 10 {
-			   	 atomic.StoreInt32(&worker.Running, 0)
-			   	 return
-			   }
+		case <-ticker:
+			request := HeartbeatRequest{WorkerID: worker.id}
+			response := HeartbeatResponse{}
+			result := call("Master.HeartBeat", &request, &response)
+			if !result {
+				failed = failed + 1
+			}
+			if failed > 10 {
+				atomic.StoreInt32(&worker.Running, 0)
+				return
+			}
 		}
 	}
 }

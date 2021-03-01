@@ -10,7 +10,7 @@ package main
 // Please do not change this file.
 //
 
-import "../mr"
+import "github.com/lilshady/mit_mapreduce/mr"
 import "plugin"
 import "os"
 import "fmt"

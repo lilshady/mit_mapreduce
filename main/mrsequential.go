@@ -7,7 +7,7 @@ package main
 //
 
 import "fmt"
-import "../mr"
+import "github.com/lilshady/mit_mapreduce/mr"
 import "plugin"
 import "os"
 import "log"

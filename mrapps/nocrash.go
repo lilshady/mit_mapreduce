@@ -6,7 +6,7 @@ package main
 // go build -buildmode=plugin nocrash.go
 //
 
-import "../mr"
+import "github.com/lilshady/mit_mapreduce/mr"
 import crand "crypto/rand"
 import "math/big"
 import "strings"

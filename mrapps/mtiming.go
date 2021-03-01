@@ -7,7 +7,7 @@ package main
 // go build -buildmode=plugin mtiming.go
 //
 
-import "../mr"
+import "github.com/lilshady/mit_mapreduce/mr"
 import "strings"
 import "fmt"
 import "os"

@@ -27,14 +27,14 @@ type ExampleReply struct {
 }
 
 type WorkRecord struct {
-	ID      string
-	WorkerID string
-	Type     string
+	ID        string
+	WorkerID  string
+	Type      string
 	locations []string
-	Assigned bool
-	Finished bool
+	Assigned  bool
+	Finished  bool
 	StartTime time.Time
-	m sync.RWMutex
+	m         sync.RWMutex
 }
 
 func (w *WorkRecord) updateAssigned(assigned bool) {
@@ -43,43 +43,42 @@ func (w *WorkRecord) updateAssigned(assigned bool) {
 	w.Assigned = assigned
 }
 
-func (w *WorkRecord) getAssigned() bool{
+func (w *WorkRecord) getAssigned() bool {
 	w.m.RLock()
 	defer w.m.RUnlock()
 	return w.Assigned
 }
 
 type AssignmentRequest struct {
-	WorkerID  string
+	WorkerID string
 }
 
 type AssignmentReply struct {
-	Status    int
-	NReduce   int
-	Record WorkRecord
+	Status  int
+	NReduce int
+	Record  WorkRecord
 }
 
 type FinishRequest struct {
-	ID  string
-	WorkerID string
-	WorkType string
+	ID        string
+	WorkerID  string
+	WorkType  string
 	locations []string
 }
 
 type FinishResponse struct {
-	Status  int
+	Status int
 }
 
 type HeartbeatRequest struct {
-	WorkerID  string
+	WorkerID string
 }
 
 type HeartbeatResponse struct {
-	Status  int
+	Status int
 }
 
 // Add your RPC definitions here.
-
 
 // Cook up a unique-ish UNIX-domain socket name
 // in /var/tmp, for the master.

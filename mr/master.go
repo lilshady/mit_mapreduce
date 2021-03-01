@@ -19,8 +19,8 @@ type Master struct {
 	// Your definitions here.
 	Tasks map[string]*WorkRecord
 
-	Assigment        map[string][]*WorkRecord
-	availableWorkers map[string]time.Time
+	Assigment           map[string][]*WorkRecord
+	availableWorkers    map[string]time.Time
 	ReduceFileLocations map[int][]string
 
 	ReducersNum     int
@@ -95,7 +95,7 @@ func (m *Master) finish(args *FinishRequest, reply *FinishResponse) error {
 		m.locationMutex.Lock()
 		for _, path := range args.locations {
 			tokens := strings.Split(path, "_")
-			index, err := strconv.Atoi(tokens[len(tokens) - 1])
+			index, err := strconv.Atoi(tokens[len(tokens)-1])
 			if err != nil {
 				log.Fatal("not right intermediate file path")
 			}
@@ -139,7 +139,7 @@ func (m *Master) Assign(args *AssignmentRequest, reply *AssignmentReply) error {
 		reply.Record = WorkRecord{
 			ID:        w.ID,
 			WorkerID:  w.WorkerID,
-			Type: w.Type,
+			Type:      w.Type,
 			locations: w.locations,
 			Assigned:  w.Assigned,
 			Finished:  w.Finished,
