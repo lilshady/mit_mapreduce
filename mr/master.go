@@ -81,6 +81,7 @@ func (m *Master) Finish(args *FinishRequest, reply *FinishResponse) error {
 	m.taskMutex.Lock()
 	if m.Tasks[taskID].Finished {
 		reply.Status = 400
+		m.taskMutex.Unlock()
 		return nil
 	}
 
@@ -100,13 +101,12 @@ func (m *Master) Finish(args *FinishRequest, reply *FinishResponse) error {
 			if err != nil {
 				log.Fatal("not right intermediate file path")
 			}
-			if _, ok := m.ReduceFileLocations[index];!ok {
+			if _, ok := m.ReduceFileLocations[index]; !ok {
 				m.ReduceFileLocations[index] = make(map[string]bool)
 			}
 			m.ReduceFileLocations[index][path] = true
 			fmt.Printf("the reduce location files are %+v\n", m.ReduceFileLocations)
 		}
-		m.locationMutex.Unlock()
 		if int(atomic.LoadInt32(&m.succeedMap)) == m.MapNum {
 			for i := 0; i < m.ReducersNum; i++ {
 				locations := make([]string, 0, len(m.ReduceFileLocations[i]))
@@ -127,6 +127,7 @@ func (m *Master) Finish(args *FinishRequest, reply *FinishResponse) error {
 				m.Tasks[task.ID] = task
 			}
 		}
+		m.locationMutex.Unlock()
 	}
 	reply.Status = 200
 	return nil
@@ -138,43 +139,45 @@ func (m *Master) Assign(args *AssignmentRequest, reply *AssignmentReply) error {
 		reply.Status = 404
 		return nil
 	}
-	time.Sleep(1 * time.Second)
+
 	fmt.Printf("receiving the assign request from %v\n", args.WorkerID)
 	m.updateWorkerLive(args.WorkerID)
 	w := m.getNextTask()
-	if w != nil {
-		w.StartTime = time.Now()
-		m.assignmentMutex.Lock()
-		w.WorkerID = args.WorkerID
-		m.Assigment[args.WorkerID] = append(m.Assigment[args.WorkerID], w)
-		m.assignmentMutex.Unlock()
-		reply.Status = 200
-		reply.NReduce = m.ReducersNum
-		reply.Record = WorkRecord{
-			ID:        w.ID,
-			WorkerID:  w.WorkerID,
-			Type:      w.Type,
-			Assigned:  w.Assigned,
-			Finished:  w.Finished,
-			Locations: w.Locations,
-			StartTime: w.StartTime,
-			Partition: w.Partition,
-		}
+	if w == nil {
+		reply.Status = 400
 		return nil
 	}
+
+	w.StartTime = time.Now()
+	m.assignmentMutex.Lock()
+	w.WorkerID = args.WorkerID
+	m.Assigment[args.WorkerID] = append(m.Assigment[args.WorkerID], w)
+	m.assignmentMutex.Unlock()
+	reply.Status = 200
+	reply.NReduce = m.ReducersNum
+	reply.Record = WorkRecord{
+		ID:        w.ID,
+		WorkerID:  w.WorkerID,
+		Type:      w.Type,
+		Assigned:  w.Assigned,
+		Finished:  w.Finished,
+		Locations: w.Locations,
+		StartTime: w.StartTime,
+		Partition: w.Partition,
+	}
+
 	fmt.Printf("now the assignment is\n")
 	for k, v := range m.Assigment {
 		for _, t := range v {
 			fmt.Printf("the worker id is %+v and task id is %+v\n", k, t.ID)
 		}
 	}
-	reply.Status = 400
 	return nil
 }
 
 func (m *Master) checkWorkers() {
 
-	ticker := time.Tick(1000 * time.Microsecond)
+	ticker := time.Tick(2 * time.Second)
 
 	for {
 
@@ -199,7 +202,7 @@ func (m *Master) checkWorkers() {
 
 func (m *Master) checkTasks() {
 
-	ticker := time.Tick(1000 * time.Microsecond)
+	ticker := time.Tick(2 * time.Second)
 
 	for {
 		select {

@@ -21,8 +21,6 @@ import "hash/fnv"
 // Map functions return a slice of KeyValue.
 //
 
-var IDX int32
-
 type KeyValue struct {
 	Key   string `json:"key"`
 	Value string `json:"value"`
@@ -48,10 +46,11 @@ func randString(n int) string {
 	var bytes = make([]byte, n)
 	rand.Read(bytes)
 	for i, b := range bytes {
-		bytes[i] = alphanum[b % byte(len(alphanum))]
+		bytes[i] = alphanum[b%byte(len(alphanum))]
 	}
 	return string(bytes)
 }
+
 //
 // main/mrworker.go calls this function.
 //
@@ -61,7 +60,7 @@ func Worker(mapf func(string, string) []KeyValue,
 	worker := MRWorker{
 		mapFunc:    mapf,
 		reduceFunc: reducef,
-		id:       randString(16),
+		id:         randString(16),
 	}
 
 	fmt.Println("about to start the worker")
@@ -89,8 +88,8 @@ func (worker *MRWorker) start() {
 		task, reduceNumber, err := worker.getWorkFromMaster()
 
 		if task == nil || err != nil {
-			fmt.Println(err)
 			time.Sleep(1 * time.Second)
+			fmt.Println(err)
 			continue
 		}
 		fmt.Printf("get the task locations %+v and type %+v and is is %+v and reduce number is %v\n", task.Locations, task.Type, task.ID, reduceNumber)
