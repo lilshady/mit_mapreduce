@@ -138,6 +138,7 @@ func (m *Master) Assign(args *AssignmentRequest, reply *AssignmentReply) error {
 		reply.Status = 404
 		return nil
 	}
+	time.Sleep(1 * time.Second)
 	fmt.Printf("receiving the assign request from %v\n", args.WorkerID)
 	m.updateWorkerLive(args.WorkerID)
 	w := m.getNextTask()

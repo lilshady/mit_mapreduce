@@ -2,6 +2,7 @@ package mr
 
 import (
 	"bufio"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -42,6 +43,15 @@ func ihash(key string) int {
 	return int(h.Sum32() & 0x7fffffff)
 }
 
+func randString(n int) string {
+	const alphanum = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+	var bytes = make([]byte, n)
+	rand.Read(bytes)
+	for i, b := range bytes {
+		bytes[i] = alphanum[b % byte(len(alphanum))]
+	}
+	return string(bytes)
+}
 //
 // main/mrworker.go calls this function.
 //
@@ -51,7 +61,7 @@ func Worker(mapf func(string, string) []KeyValue,
 	worker := MRWorker{
 		mapFunc:    mapf,
 		reduceFunc: reducef,
-		id:         strconv.Itoa(int(atomic.AddInt32(&IDX, 1))),
+		id:       randString(16),
 	}
 
 	fmt.Println("about to start the worker")
@@ -126,10 +136,10 @@ func (worker *MRWorker) handleMapTask(task *WorkRecord, reduceNumber int) Finish
 			path := worker.id + "_map_" + strconv.Itoa(shard)
 			locations = append(locations, path)
 			file, err = createFileIfNotExist(path)
-			fileCache[shard] = file
 			if err != nil {
 				log.Fatal("unable to open the file")
 			}
+			fileCache[shard] = file
 		}
 		c, err := json.Marshal(kv)
 		if err != nil {
@@ -200,11 +210,12 @@ func (worker *MRWorker) handleReduceTask(task *WorkRecord) FinishRequest {
 
 func createFileIfNotExist(filename string) (*os.File, error) {
 
-	if _, err := os.Stat(filename); os.IsNotExist(err) {
-		return os.Create(filename)
-	} else {
-		return os.Open(filename)
+	f, err := os.OpenFile(filename,
+		os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		log.Println(err)
 	}
+	return f, err
 }
 
 func (worker *MRWorker) getWorkFromMaster() (*WorkRecord, int, error) {
