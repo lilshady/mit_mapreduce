@@ -21,7 +21,7 @@ type Master struct {
 
 	Assigment           map[string][]*WorkRecord
 	availableWorkers    map[string]time.Time
-	ReduceFileLocations map[int][]string
+	ReduceFileLocations map[int]map[string]bool
 
 	ReducersNum     int
 	MapNum          int
@@ -59,6 +59,7 @@ func (m *Master) Example(args *ExampleArgs, reply *ExampleReply) error {
 }
 
 func (m *Master) HeartBeat(args *HeartbeatRequest, reply *HeartbeatResponse) error {
+	fmt.Printf("got the hearbeat request %v\n", args.WorkerID)
 	workerID := args.WorkerID
 	m.updateWorkerLive(workerID)
 	reply.Status = 200
@@ -71,7 +72,7 @@ func (m *Master) updateWorkerLive(workerID string) {
 	m.availableWorkers[workerID] = time.Now()
 }
 
-func (m *Master) finish(args *FinishRequest, reply *FinishResponse) error {
+func (m *Master) Finish(args *FinishRequest, reply *FinishResponse) error {
 
 	workerID := args.WorkerID
 	m.updateWorkerLive(workerID)
@@ -93,22 +94,35 @@ func (m *Master) finish(args *FinishRequest, reply *FinishResponse) error {
 	if args.WorkType == "map" {
 		atomic.AddInt32(&m.succeedMap, 1)
 		m.locationMutex.Lock()
-		for _, path := range args.locations {
+		for _, path := range args.Locations {
 			tokens := strings.Split(path, "_")
 			index, err := strconv.Atoi(tokens[len(tokens)-1])
 			if err != nil {
 				log.Fatal("not right intermediate file path")
 			}
-			m.ReduceFileLocations[index] = append(m.ReduceFileLocations[index], path)
+			if _, ok := m.ReduceFileLocations[index];!ok {
+				m.ReduceFileLocations[index] = make(map[string]bool)
+			}
+			m.ReduceFileLocations[index][path] = true
+			fmt.Printf("the reduce location files are %+v\n", m.ReduceFileLocations)
 		}
 		m.locationMutex.Unlock()
-
 		if int(atomic.LoadInt32(&m.succeedMap)) == m.MapNum {
 			for i := 0; i < m.ReducersNum; i++ {
+				locations := make([]string, 0, len(m.ReduceFileLocations[i]))
+				for k, _ := range m.ReduceFileLocations[i] {
+					locations = append(locations, k)
+				}
+				if len(locations) == 0 {
+					atomic.AddInt32(&m.succeedReduce, 1)
+					continue
+				}
+				temp := i
 				task := &WorkRecord{
 					ID:        "reduce_" + strconv.Itoa(i),
 					Type:      "reduce",
-					locations: m.ReduceFileLocations[i],
+					Partition: temp,
+					Locations: locations,
 				}
 				m.Tasks[task.ID] = task
 			}
@@ -127,7 +141,6 @@ func (m *Master) Assign(args *AssignmentRequest, reply *AssignmentReply) error {
 	fmt.Printf("receiving the assign request from %v\n", args.WorkerID)
 	m.updateWorkerLive(args.WorkerID)
 	w := m.getNextTask()
-	fmt.Printf("find the unassigned task: %v\n and its type %v\n", w.ID, w.Type)
 	if w != nil {
 		w.StartTime = time.Now()
 		m.assignmentMutex.Lock()
@@ -140,10 +153,11 @@ func (m *Master) Assign(args *AssignmentRequest, reply *AssignmentReply) error {
 			ID:        w.ID,
 			WorkerID:  w.WorkerID,
 			Type:      w.Type,
-			locations: w.locations,
 			Assigned:  w.Assigned,
 			Finished:  w.Finished,
+			Locations: w.Locations,
 			StartTime: w.StartTime,
+			Partition: w.Partition,
 		}
 		return nil
 	}
@@ -159,7 +173,7 @@ func (m *Master) Assign(args *AssignmentRequest, reply *AssignmentReply) error {
 
 func (m *Master) checkWorkers() {
 
-	ticker := time.Tick(100 * time.Microsecond)
+	ticker := time.Tick(1000 * time.Microsecond)
 
 	for {
 
@@ -167,7 +181,6 @@ func (m *Master) checkWorkers() {
 		case <-ticker:
 			m.workerMutex.Lock()
 			for worker, updateTime := range m.availableWorkers {
-				fmt.Printf("checking the worker %s at %+v and its update time is %+v\n", worker, time.Now(), updateTime)
 				if time.Now().Sub(updateTime) > TIME_OUT {
 					fmt.Printf("removing the worker %s at %+v and its update time is %+v\n", worker, time.Now(), updateTime)
 					delete(m.availableWorkers, worker)
@@ -185,15 +198,14 @@ func (m *Master) checkWorkers() {
 
 func (m *Master) checkTasks() {
 
-	ticker := time.Tick(100 * time.Microsecond)
+	ticker := time.Tick(1000 * time.Microsecond)
 
 	for {
 		select {
 		case <-ticker:
 			m.taskMutex.Lock()
 			for _, w := range m.Tasks {
-				fmt.Printf("checking the task %s at %+v and its start time is %+v\n", w.ID, time.Now(), w.StartTime)
-				if time.Now().Sub(w.StartTime) > TIME_OUT {
+				if w.Assigned && time.Now().Sub(w.StartTime) > TIME_OUT {
 					fmt.Printf("updating the task %s to unassigned %+v and its start time is %+v\n", w.ID, time.Now(), w.StartTime)
 					w.updateAssigned(false)
 				}
@@ -249,16 +261,16 @@ func MakeMaster(files []string, nReduce int) *Master {
 	m.Tasks = make(map[string]*WorkRecord)
 	m.availableWorkers = make(map[string]time.Time)
 	m.Assigment = make(map[string][]*WorkRecord)
-	m.ReduceFileLocations = make(map[int][]string)
+	m.ReduceFileLocations = make(map[int]map[string]bool)
 	for _, file := range files {
 		record := &WorkRecord{
 			ID:        file,
 			Type:      "map",
-			locations: []string{file},
+			Locations: []string{file},
 		}
 		m.Tasks[record.ID] = record
 	}
-
+	fmt.Printf("the task length is %v\n", len(m.Tasks))
 	go m.checkWorkers()
 	go m.checkTasks()
 	m.server()

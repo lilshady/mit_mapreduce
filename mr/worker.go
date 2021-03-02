@@ -54,6 +54,7 @@ func Worker(mapf func(string, string) []KeyValue,
 		id:         strconv.Itoa(int(atomic.AddInt32(&IDX, 1))),
 	}
 
+	fmt.Println("about to start the worker")
 	worker.start()
 	// Your worker implementation here.
 
@@ -76,11 +77,14 @@ func (worker *MRWorker) start() {
 	for atomic.LoadInt32(&worker.Running) == 1 {
 
 		task, reduceNumber, err := worker.getWorkFromMaster()
-		if err != nil {
+
+		if task == nil || err != nil {
 			fmt.Println(err)
 			time.Sleep(1 * time.Second)
 			continue
 		}
+		fmt.Printf("get the task locations %+v and type %+v and is is %+v and reduce number is %v\n", task.Locations, task.Type, task.ID, reduceNumber)
+
 		var request FinishRequest
 		var reply FinishResponse
 		if task.Type == "map" {
@@ -102,7 +106,7 @@ func (worker *MRWorker) start() {
 
 func (worker *MRWorker) handleMapTask(task *WorkRecord, reduceNumber int) FinishRequest {
 
-	filePath := task.locations[0]
+	filePath := task.Locations[0]
 	file, err := os.Open(filePath)
 	if err != nil {
 		log.Fatalf("cannot open %v", filePath)
@@ -132,17 +136,18 @@ func (worker *MRWorker) handleMapTask(task *WorkRecord, reduceNumber int) Finish
 			continue
 		}
 		file.Write(c)
+		file.WriteString("\n")
 	}
 	return FinishRequest{
 		ID:        task.ID,
 		WorkerID:  worker.id,
 		WorkType:  "map",
-		locations: locations,
+		Locations: locations,
 	}
 }
 
 func (worker *MRWorker) handleReduceTask(task *WorkRecord) FinishRequest {
-	locations := task.locations
+	locations := task.Locations
 	data := make([]KeyValue, 0)
 	for _, filename := range locations {
 		file, err := os.Open(filename)
@@ -152,6 +157,9 @@ func (worker *MRWorker) handleReduceTask(task *WorkRecord) FinishRequest {
 		scanner := bufio.NewScanner(file)
 		for scanner.Scan() {
 			line := scanner.Bytes()
+			if len(line) == 0 {
+				continue
+			}
 			kv := &KeyValue{}
 			err := json.Unmarshal(line, kv)
 			if err != nil {
@@ -161,8 +169,7 @@ func (worker *MRWorker) handleReduceTask(task *WorkRecord) FinishRequest {
 		}
 	}
 	sort.Sort(ByKey(data))
-
-	oname := "mr-out-" + worker.id
+	oname := "mr-out-" + strconv.Itoa(task.Partition)
 	ofile, _ := os.Create(oname)
 	defer ofile.Close()
 	i := 0
@@ -187,7 +194,7 @@ func (worker *MRWorker) handleReduceTask(task *WorkRecord) FinishRequest {
 		ID:        task.ID,
 		WorkerID:  worker.id,
 		WorkType:  "reduce",
-		locations: locations,
+		Locations: locations,
 	}
 }
 
@@ -206,10 +213,10 @@ func (worker *MRWorker) getWorkFromMaster() (*WorkRecord, int, error) {
 	reply := &AssignmentReply{}
 	succeed := call("Master.Assign", &request, reply)
 	if !succeed {
-		return nil, 0, errors.New("Unable to get new task")
+		return nil, 0, errors.New("Unable to get new task as failed")
 	}
 	if reply.Status != 200 {
-		return nil, 0, errors.New("Unable to get new task")
+		return nil, 0, errors.New("Unable to get new task " + strconv.Itoa(reply.Status))
 	}
 	return &reply.Record, reply.NReduce, nil
 }

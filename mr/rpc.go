@@ -30,7 +30,8 @@ type WorkRecord struct {
 	ID        string
 	WorkerID  string
 	Type      string
-	locations []string
+	Partition int
+	Locations []string
 	Assigned  bool
 	Finished  bool
 	StartTime time.Time
@@ -63,7 +64,7 @@ type FinishRequest struct {
 	ID        string
 	WorkerID  string
 	WorkType  string
-	locations []string
+	Locations []string
 }
 
 type FinishResponse struct {
