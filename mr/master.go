@@ -32,6 +32,7 @@ type Master struct {
 	assignmentMutex sync.Mutex
 	locationMutex   sync.Mutex
 	stopCheck       chan struct{}
+	taskChannel     chan *Task
 }
 
 func (m *Master) getNextTask() *Task {
@@ -135,14 +136,20 @@ func (m *Master) Finish(args *FinishRequest, reply *FinishResponse) error {
 
 func (m *Master) Assign(args *AssignmentRequest, reply *AssignmentReply) error {
 
-	if len(m.Tasks) == 0 {
-		reply.Status = 404
-		return nil
-	}
+	//if len(m.Tasks) == 0 {
+	//	reply.Status = 404
+	//	return nil
+	//}
 
 	fmt.Printf("receiving the assign request from %v\n", args.WorkerID)
 	m.updateWorkerLive(args.WorkerID)
-	w := m.getNextTask()
+	//w := m.getNextTask()
+	var w *Task
+	select {
+	case w = <- m.taskChannel:
+	default:
+		fmt.Println("no task available now")
+	}
 
 	if w == nil {
 		reply.Status = 400
@@ -151,6 +158,7 @@ func (m *Master) Assign(args *AssignmentRequest, reply *AssignmentReply) error {
 
 	w.StartTime = time.Now()
 	m.assignmentMutex.Lock()
+	w.updateAssigned(true)
 	w.WorkerID = args.WorkerID
 	m.Assigment[args.WorkerID] = append(m.Assigment[args.WorkerID], w)
 	m.assignmentMutex.Unlock()
@@ -267,6 +275,7 @@ func MakeMaster(files []string, nReduce int) *Master {
 	m.availableWorkers = make(map[string]time.Time)
 	m.Assigment = make(map[string][]*Task)
 	m.ReduceFileLocations = make(map[int]map[string]bool)
+	m.taskChannel = make(chan *Task, 200)
 	for _, file := range files {
 		record := &Task{
 			ID:        file,
@@ -274,6 +283,7 @@ func MakeMaster(files []string, nReduce int) *Master {
 			Locations: []string{file},
 		}
 		m.Tasks[record.ID] = record
+		m.taskChannel <- record
 	}
 	fmt.Printf("the task length is %v\n", len(m.Tasks))
 	go m.checkWorkers()
