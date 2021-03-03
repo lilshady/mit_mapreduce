@@ -113,7 +113,7 @@ func (worker *MRWorker) start() {
 	}
 }
 
-func (worker *MRWorker) handleMapTask(task *WorkRecord, reduceNumber int) FinishRequest {
+func (worker *MRWorker) handleMapTask(task *Task, reduceNumber int) FinishRequest {
 
 	filePath := task.Locations[0]
 	file, err := os.Open(filePath)
@@ -124,7 +124,7 @@ func (worker *MRWorker) handleMapTask(task *WorkRecord, reduceNumber int) Finish
 	if err != nil {
 		log.Fatalf("cannot read %v", filePath)
 	}
-	file.Close()
+	defer file.Close()
 	fileCache := make(map[int]*os.File)
 	locations := make([]string, 0)
 	kva := worker.mapFunc(filePath, string(content))
@@ -132,7 +132,7 @@ func (worker *MRWorker) handleMapTask(task *WorkRecord, reduceNumber int) Finish
 		shard := ihash(kv.Key) % reduceNumber
 		file, ok := fileCache[shard]
 		if !ok {
-			path := worker.id + "_map_" + strconv.Itoa(shard)
+			path := worker.id + "_map_" + task.ID + strconv.FormatInt(time.Now().UnixNano()/1000000, 10) +"_"+ strconv.Itoa(shard)
 			locations = append(locations, path)
 			file, err = createFileIfNotExist(path)
 			if err != nil {
@@ -155,7 +155,7 @@ func (worker *MRWorker) handleMapTask(task *WorkRecord, reduceNumber int) Finish
 	}
 }
 
-func (worker *MRWorker) handleReduceTask(task *WorkRecord) FinishRequest {
+func (worker *MRWorker) handleReduceTask(task *Task) FinishRequest {
 	locations := task.Locations
 	data := make([]KeyValue, 0)
 	for _, filename := range locations {
@@ -163,6 +163,7 @@ func (worker *MRWorker) handleReduceTask(task *WorkRecord) FinishRequest {
 		if err != nil {
 			log.Fatalf("cannot open %v", filename)
 		}
+		defer file.Close()
 		scanner := bufio.NewScanner(file)
 		for scanner.Scan() {
 			line := scanner.Bytes()
@@ -217,7 +218,7 @@ func createFileIfNotExist(filename string) (*os.File, error) {
 	return f, err
 }
 
-func (worker *MRWorker) getWorkFromMaster() (*WorkRecord, int, error) {
+func (worker *MRWorker) getWorkFromMaster() (*Task, int, error) {
 
 	request := AssignmentRequest{WorkerID: worker.id}
 	reply := &AssignmentReply{}

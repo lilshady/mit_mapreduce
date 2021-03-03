@@ -13,13 +13,13 @@ import "net"
 import "net/rpc"
 import "net/http"
 
-const TIME_OUT time.Duration = 10 * time.Second
+const TIME_OUT  = 10 * time.Second
 
 type Master struct {
 	// Your definitions here.
-	Tasks map[string]*WorkRecord
+	Tasks map[string]*Task
 
-	Assigment           map[string][]*WorkRecord
+	Assigment           map[string][]*Task
 	availableWorkers    map[string]time.Time
 	ReduceFileLocations map[int]map[string]bool
 
@@ -34,11 +34,11 @@ type Master struct {
 	stopCheck       chan struct{}
 }
 
-func (m *Master) getNextTask() *WorkRecord {
+func (m *Master) getNextTask() *Task {
 	m.taskMutex.Lock()
 	defer m.taskMutex.Unlock()
 	for _, v := range m.Tasks {
-		if !v.getAssigned() {
+		if !v.Finished && !v.getAssigned() {
 			v.updateAssigned(true)
 			return v
 		}
@@ -118,7 +118,7 @@ func (m *Master) Finish(args *FinishRequest, reply *FinishResponse) error {
 					continue
 				}
 				temp := i
-				task := &WorkRecord{
+				task := &Task{
 					ID:        "reduce_" + strconv.Itoa(i),
 					Type:      "reduce",
 					Partition: temp,
@@ -143,6 +143,7 @@ func (m *Master) Assign(args *AssignmentRequest, reply *AssignmentReply) error {
 	fmt.Printf("receiving the assign request from %v\n", args.WorkerID)
 	m.updateWorkerLive(args.WorkerID)
 	w := m.getNextTask()
+
 	if w == nil {
 		reply.Status = 400
 		return nil
@@ -155,7 +156,7 @@ func (m *Master) Assign(args *AssignmentRequest, reply *AssignmentReply) error {
 	m.assignmentMutex.Unlock()
 	reply.Status = 200
 	reply.NReduce = m.ReducersNum
-	reply.Record = WorkRecord{
+	reply.Record = Task{
 		ID:        w.ID,
 		WorkerID:  w.WorkerID,
 		Type:      w.Type,
@@ -180,7 +181,6 @@ func (m *Master) checkWorkers() {
 	ticker := time.Tick(2 * time.Second)
 
 	for {
-
 		select {
 		case <-ticker:
 			m.workerMutex.Lock()
@@ -209,7 +209,7 @@ func (m *Master) checkTasks() {
 		case <-ticker:
 			m.taskMutex.Lock()
 			for _, w := range m.Tasks {
-				if w.Assigned && time.Now().Sub(w.StartTime) > TIME_OUT {
+				if !w.Finished && w.Assigned && time.Now().Sub(w.StartTime) > TIME_OUT {
 					fmt.Printf("updating the task %s to unassigned %+v and its start time is %+v\n", w.ID, time.Now(), w.StartTime)
 					w.updateAssigned(false)
 				}
@@ -243,6 +243,7 @@ func (m *Master) server() {
 // if the entire job has finished.
 //
 func (m *Master) Done() bool {
+	fmt.Printf("Done, the succeed reduce is %+v\n", m.succeedReduce)
 	if m.succeedReduce == int32(m.ReducersNum) {
 		close(m.stopCheck)
 		return true
@@ -262,12 +263,12 @@ func MakeMaster(files []string, nReduce int) *Master {
 	m.ReducersNum = nReduce
 	m.MapNum = len(files)
 	m.stopCheck = make(chan struct{})
-	m.Tasks = make(map[string]*WorkRecord)
+	m.Tasks = make(map[string]*Task)
 	m.availableWorkers = make(map[string]time.Time)
-	m.Assigment = make(map[string][]*WorkRecord)
+	m.Assigment = make(map[string][]*Task)
 	m.ReduceFileLocations = make(map[int]map[string]bool)
 	for _, file := range files {
-		record := &WorkRecord{
+		record := &Task{
 			ID:        file,
 			Type:      "map",
 			Locations: []string{file},

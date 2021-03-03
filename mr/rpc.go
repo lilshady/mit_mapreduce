@@ -26,7 +26,7 @@ type ExampleReply struct {
 	Y int
 }
 
-type WorkRecord struct {
+type Task struct {
 	ID        string
 	WorkerID  string
 	Type      string
@@ -38,13 +38,13 @@ type WorkRecord struct {
 	m         sync.RWMutex
 }
 
-func (w *WorkRecord) updateAssigned(assigned bool) {
+func (w *Task) updateAssigned(assigned bool) {
 	w.m.Lock()
 	defer w.m.Unlock()
 	w.Assigned = assigned
 }
 
-func (w *WorkRecord) getAssigned() bool {
+func (w *Task) getAssigned() bool {
 	w.m.RLock()
 	defer w.m.RUnlock()
 	return w.Assigned
@@ -57,7 +57,7 @@ type AssignmentRequest struct {
 type AssignmentReply struct {
 	Status  int
 	NReduce int
-	Record  WorkRecord
+	Record  Task
 }
 
 type FinishRequest struct {
