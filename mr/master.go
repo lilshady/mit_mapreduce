@@ -110,7 +110,7 @@ func (m *Master) Finish(args *FinishRequest, reply *FinishResponse) error {
 		if int(atomic.LoadInt32(&m.succeedMap)) == m.MapNum {
 			for i := 0; i < m.ReducersNum; i++ {
 				locations := make([]string, 0, len(m.ReduceFileLocations[i]))
-				for k, _ := range m.ReduceFileLocations[i] {
+				for k := range m.ReduceFileLocations[i] {
 					locations = append(locations, k)
 				}
 				if len(locations) == 0 {

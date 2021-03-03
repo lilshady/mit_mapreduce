@@ -224,7 +224,7 @@ func (worker *MRWorker) getWorkFromMaster() (*Task, int, error) {
 	reply := &AssignmentReply{}
 	succeed := call("Master.Assign", &request, reply)
 	if !succeed {
-		return nil, 0, errors.New("Unable to get new task as failed")
+		return nil, 0, errors.New("unable to get new task as failed")
 	}
 	if reply.Status != 200 {
 		return nil, 0, errors.New("Unable to get new task " + strconv.Itoa(reply.Status))
