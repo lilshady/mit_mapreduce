@@ -73,9 +73,6 @@ func (m *Master) Example(args *ExampleArgs, reply *ExampleReply) error {
 }
 
 func (m *Master) HeartBeat(args *HeartbeatRequest, reply *HeartbeatResponse) error {
-	//fmt.Printf("got the hearbeat request %v\n", args.WorkerID)
-	//workerID := args.WorkerID
-	//m.updateWorkerLive(workerID)
 	m.heartbeatChan <- *args
 	reply.Status = 200
 	return nil
@@ -102,72 +99,10 @@ func (m *Master) Finish(args *FinishRequest, reply *FinishResponse) error {
 		reply.Status = 500
 		return nil
 	}
-
-	//workerID := args.WorkerID
-	//m.updateWorkerLive(workerID)
-	//taskID := args.ID
-	//
-	//m.taskMutex.Lock()
-	//if m.Tasks[taskID].Finished {
-	//	reply.Status = 400
-	//	m.taskMutex.Unlock()
-	//	return nil
-	//}
-	//
-	//m.Tasks[taskID].Finished = true
-	//m.taskMutex.Unlock()
-	//
-	//reply.Status = 200
-	//if args.WorkType == "reduce" {
-	//	atomic.AddInt32(&m.succeedReduce, 1)
-	//}
-	//if args.WorkType == "map" {
-	//	atomic.AddInt32(&m.succeedMap, 1)
-	//	m.locationMutex.Lock()
-	//	for _, path := range args.Locations {
-	//		tokens := strings.Split(path, "_")
-	//		index, err := strconv.Atoi(tokens[len(tokens)-1])
-	//		if err != nil {
-	//			log.Fatal("not right intermediate file path")
-	//		}
-	//		if _, ok := m.ReduceFileLocations[index]; !ok {
-	//			m.ReduceFileLocations[index] = make(map[string]bool)
-	//		}
-	//		m.ReduceFileLocations[index][path] = true
-	//		fmt.Printf("the reduce location files are %+v\n", m.ReduceFileLocations)
-	//	}
-	//	if int(atomic.LoadInt32(&m.succeedMap)) == m.MapNum {
-	//		for i := 0; i < m.ReducersNum; i++ {
-	//			locations := make([]string, 0, len(m.ReduceFileLocations[i]))
-	//			for k, _ := range m.ReduceFileLocations[i] {
-	//				locations = append(locations, k)
-	//			}
-	//			if len(locations) == 0 {
-	//				atomic.AddInt32(&m.succeedReduce, 1)
-	//				continue
-	//			}
-	//			temp := i
-	//			task := &Task{
-	//				ID:        "reduce_" + strconv.Itoa(i),
-	//				Type:      "reduce",
-	//				Partition: temp,
-	//				Locations: locations,
-	//			}
-	//			m.Tasks[task.ID] = task
-	//		}
-	//	}
-	//	m.locationMutex.Unlock()
-	//}
-	//reply.Status = 200
-	//return nil
 }
 
 func (m *Master) Assign(args *AssignmentRequest, reply *AssignmentReply) error {
 
-	//if len(m.Tasks) == 0 {
-	//	reply.Status = 404
-	//	return nil
-	//}
 	fmt.Printf("receiving the assign request from %v\n", args.WorkerID)
 	m.updateWorkerLive(args.WorkerID)
 	response := make(chan *Task)
@@ -196,48 +131,6 @@ func (m *Master) Assign(args *AssignmentRequest, reply *AssignmentReply) error {
 		reply.Status = 500
 		return nil
 	}
-
-	//fmt.Printf("receiving the assign request from %v\n", args.WorkerID)
-	//m.updateWorkerLive(args.WorkerID)
-	////w := m.getNextTask()
-	//var w *Task
-	//select {
-	//case w = <- m.taskChannel:
-	//default:
-	//	fmt.Println("no task available now")
-	//}
-	//
-	//if w == nil {
-	//	reply.Status = 400
-	//	return nil
-	//}
-	//
-	//w.StartTime = time.Now()
-	//m.assignmentMutex.Lock()
-	//w.updateAssigned(true)
-	//w.WorkerID = args.WorkerID
-	//m.Assigment[args.WorkerID] = append(m.Assigment[args.WorkerID], w)
-	//m.assignmentMutex.Unlock()
-	//reply.Status = 200
-	//reply.NReduce = m.ReducersNum
-	//reply.Record = Task{
-	//	ID:        w.ID,
-	//	WorkerID:  w.WorkerID,
-	//	Type:      w.Type,
-	//	Assigned:  w.Assigned,
-	//	Finished:  w.Finished,
-	//	Locations: w.Locations,
-	//	StartTime: w.StartTime,
-	//	Partition: w.Partition,
-	//}
-	//
-	//fmt.Printf("now the assignment is\n")
-	//for k, v := range m.Assigment {
-	//	for _, t := range v {
-	//		fmt.Printf("the worker id is %+v and task id is %+v\n", k, t.ID)
-	//	}
-	//}
-	//return nil
 }
 
 func (m *Master) checkWorkerOneTime() {
@@ -439,8 +332,6 @@ func MakeMaster(files []string, nReduce int) *Master {
 		m.taskChannel <- record
 	}
 	fmt.Printf("the task length is %v\n", len(m.Tasks))
-	//go m.checkWorkers()
-	//go m.checkTasks()
 	m.server()
 	return &m
 }
