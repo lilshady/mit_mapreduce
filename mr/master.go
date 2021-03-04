@@ -5,7 +5,6 @@ import (
 	"log"
 	"strconv"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -13,7 +12,7 @@ import "net"
 import "net/rpc"
 import "net/http"
 
-const TIME_OUT  = 10 * time.Second
+const TIME_OUT = 10 * time.Second
 
 type Master struct {
 	// Your definitions here.
@@ -23,20 +22,27 @@ type Master struct {
 	availableWorkers    map[string]time.Time
 	ReduceFileLocations map[int]map[string]bool
 
-	ReducersNum     int
-	MapNum          int
-	succeedMap      int32
-	succeedReduce   int32
-	taskMutex       sync.Mutex
-	workerMutex     sync.Mutex
-	assignmentMutex sync.Mutex
-	locationMutex   sync.Mutex
-	stopCheck       chan struct{}
+	ReducersNum    int
+	MapNum         int
+	succeedMap     int32
+	succeedReduce  int32
+	stopCheck      chan struct{}
+	assignmentChan chan AssigmentChanRequest
+	finishChan     chan TaskFinishRequest
+	heartbeatChan  chan HeartbeatRequest
+}
+
+type AssigmentChanRequest struct {
+	request  AssignmentRequest
+	response *chan *Task
+}
+
+type TaskFinishRequest struct {
+	request  FinishRequest
+	response *chan int
 }
 
 func (m *Master) getNextTask() *Task {
-	m.taskMutex.Lock()
-	defer m.taskMutex.Unlock()
 	for _, v := range m.Tasks {
 		if !v.Finished && !v.getAssigned() {
 			v.updateAssigned(true)
@@ -59,167 +65,85 @@ func (m *Master) Example(args *ExampleArgs, reply *ExampleReply) error {
 }
 
 func (m *Master) HeartBeat(args *HeartbeatRequest, reply *HeartbeatResponse) error {
-	fmt.Printf("got the hearbeat request %v\n", args.WorkerID)
-	workerID := args.WorkerID
-	m.updateWorkerLive(workerID)
+	m.heartbeatChan <- *args
 	reply.Status = 200
 	return nil
 }
 
 func (m *Master) updateWorkerLive(workerID string) {
-	m.workerMutex.Lock()
-	defer m.workerMutex.Unlock()
 	m.availableWorkers[workerID] = time.Now()
 }
 
 func (m *Master) Finish(args *FinishRequest, reply *FinishResponse) error {
 
-	workerID := args.WorkerID
-	m.updateWorkerLive(workerID)
-	taskID := args.ID
-
-	m.taskMutex.Lock()
-	if m.Tasks[taskID].Finished {
-		reply.Status = 400
-		m.taskMutex.Unlock()
+	m.updateWorkerLive(args.WorkerID)
+	response := make(chan int)
+	m.finishChan <- TaskFinishRequest{
+		request:  *args,
+		response: &response,
+	}
+	ticker := time.Tick(5 * time.Second)
+	select {
+	case r := <-response:
+		reply.Status = r
+		return nil
+	case <-ticker:
+		reply.Status = 500
 		return nil
 	}
-
-	m.Tasks[taskID].Finished = true
-	m.taskMutex.Unlock()
-
-	reply.Status = 200
-	if args.WorkType == "reduce" {
-		atomic.AddInt32(&m.succeedReduce, 1)
-	}
-	if args.WorkType == "map" {
-		atomic.AddInt32(&m.succeedMap, 1)
-		m.locationMutex.Lock()
-		for _, path := range args.Locations {
-			tokens := strings.Split(path, "_")
-			index, err := strconv.Atoi(tokens[len(tokens)-1])
-			if err != nil {
-				log.Fatal("not right intermediate file path")
-			}
-			if _, ok := m.ReduceFileLocations[index]; !ok {
-				m.ReduceFileLocations[index] = make(map[string]bool)
-			}
-			m.ReduceFileLocations[index][path] = true
-			fmt.Printf("the reduce location files are %+v\n", m.ReduceFileLocations)
-		}
-		if int(atomic.LoadInt32(&m.succeedMap)) == m.MapNum {
-			for i := 0; i < m.ReducersNum; i++ {
-				locations := make([]string, 0, len(m.ReduceFileLocations[i]))
-				for k := range m.ReduceFileLocations[i] {
-					locations = append(locations, k)
-				}
-				if len(locations) == 0 {
-					atomic.AddInt32(&m.succeedReduce, 1)
-					continue
-				}
-				temp := i
-				task := &Task{
-					ID:        "reduce_" + strconv.Itoa(i),
-					Type:      "reduce",
-					Partition: temp,
-					Locations: locations,
-				}
-				m.Tasks[task.ID] = task
-			}
-		}
-		m.locationMutex.Unlock()
-	}
-	reply.Status = 200
-	return nil
 }
 
 func (m *Master) Assign(args *AssignmentRequest, reply *AssignmentReply) error {
 
-	if len(m.Tasks) == 0 {
-		reply.Status = 404
-		return nil
-	}
-
 	fmt.Printf("receiving the assign request from %v\n", args.WorkerID)
 	m.updateWorkerLive(args.WorkerID)
-	w := m.getNextTask()
-
-	if w == nil {
-		reply.Status = 400
+	response := make(chan *Task)
+	ticker := time.Tick(5 * time.Second)
+	m.assignmentChan <- AssigmentChanRequest{request: *args, response: &response}
+	select {
+	case w := <-response:
+		if w == nil {
+			reply.Status = 404
+		} else {
+			reply.Status = 200
+			reply.NReduce = m.ReducersNum
+			reply.Record = Task{
+				ID:        w.ID,
+				WorkerID:  w.WorkerID,
+				Type:      w.Type,
+				Assigned:  w.Assigned,
+				Finished:  w.Finished,
+				Locations: w.Locations,
+				StartTime: w.StartTime,
+				Partition: w.Partition,
+			}
+		}
+		return nil
+	case <-ticker:
+		reply.Status = 500
 		return nil
 	}
-
-	w.StartTime = time.Now()
-	m.assignmentMutex.Lock()
-	w.WorkerID = args.WorkerID
-	m.Assigment[args.WorkerID] = append(m.Assigment[args.WorkerID], w)
-	m.assignmentMutex.Unlock()
-	reply.Status = 200
-	reply.NReduce = m.ReducersNum
-	reply.Record = Task{
-		ID:        w.ID,
-		WorkerID:  w.WorkerID,
-		Type:      w.Type,
-		Assigned:  w.Assigned,
-		Finished:  w.Finished,
-		Locations: w.Locations,
-		StartTime: w.StartTime,
-		Partition: w.Partition,
-	}
-
-	fmt.Printf("now the assignment is\n")
-	for k, v := range m.Assigment {
-		for _, t := range v {
-			fmt.Printf("the worker id is %+v and task id is %+v\n", k, t.ID)
-		}
-	}
-	return nil
 }
 
-func (m *Master) checkWorkers() {
-
-	ticker := time.Tick(2 * time.Second)
-
-	for {
-		select {
-		case <-ticker:
-			m.workerMutex.Lock()
-			for worker, updateTime := range m.availableWorkers {
-				if time.Now().Sub(updateTime) > TIME_OUT {
-					fmt.Printf("removing the worker %s at %+v and its update time is %+v\n", worker, time.Now(), updateTime)
-					delete(m.availableWorkers, worker)
-					for _, w := range m.Assigment[worker] {
-						w.updateAssigned(false)
-					}
-				}
+func (m *Master) checkWorkerOneTime() {
+	for worker, updateTime := range m.availableWorkers {
+		if time.Now().Sub(updateTime) > TIME_OUT {
+			fmt.Printf("removing the worker %s at %+v and its update time is %+v\n", worker, time.Now(), updateTime)
+			delete(m.availableWorkers, worker)
+			for _, w := range m.Assigment[worker] {
+				w.updateAssigned(false)
 			}
-			m.workerMutex.Unlock()
-		case <-m.stopCheck:
-			return
 		}
 	}
 }
 
-func (m *Master) checkTasks() {
-
-	ticker := time.Tick(2 * time.Second)
-
-	for {
-		select {
-		case <-ticker:
-			m.taskMutex.Lock()
-			for _, w := range m.Tasks {
-				if !w.Finished && w.Assigned && time.Now().Sub(w.StartTime) > TIME_OUT {
-					fmt.Printf("updating the task %s to unassigned %+v and its start time is %+v\n", w.ID, time.Now(), w.StartTime)
-					w.updateAssigned(false)
-				}
-			}
-			m.taskMutex.Unlock()
-		case <-m.stopCheck:
-			return
+func (m *Master) checkTasksOneTime() {
+	for _, w := range m.Tasks {
+		if !w.Finished && w.Assigned && time.Now().Sub(w.StartTime) > TIME_OUT {
+			fmt.Printf("updating the task %s to unassigned %+v and its start time is %+v\n", w.ID, time.Now(), w.StartTime)
+			w.updateAssigned(false)
 		}
 	}
-
 }
 
 //
@@ -236,6 +160,7 @@ func (m *Master) server() {
 		log.Fatal("listen error:", e)
 	}
 	go http.Serve(l, nil)
+	go m.EventLoop()
 }
 
 //
@@ -249,6 +174,97 @@ func (m *Master) Done() bool {
 		return true
 	} else {
 		return false
+	}
+}
+
+func (m *Master) EventLoop() {
+	workerTicker := time.Tick(2 * time.Second)
+	taskTicker := time.Tick(2 * time.Second)
+	for {
+		select {
+		case <-workerTicker:
+			m.checkWorkerOneTime()
+		case <-taskTicker:
+			m.checkWorkerOneTime()
+		case heartbeatRequest := <-m.heartbeatChan:
+			m.updateWorkerLive(heartbeatRequest.WorkerID)
+		case assignRequest := <-m.assignmentChan:
+			fmt.Printf("the request is comming from %v", assignRequest.request.WorkerID)
+			responseChan := *assignRequest.response
+			if len(m.Tasks) == 0 {
+				responseChan <- nil
+				continue
+			}
+			w := m.getNextTask()
+			if w == nil {
+				responseChan <- nil
+				continue
+			}
+			w.StartTime = time.Now()
+			w.updateAssigned(true)
+			workerID := assignRequest.request.WorkerID
+			w.WorkerID = workerID
+			m.Assigment[workerID] = append(m.Assigment[workerID], w)
+			responseChan <- w
+
+		case finishRequest := <-m.finishChan:
+			responseChan := *finishRequest.response
+			args := finishRequest.request
+			taskID := args.ID
+			if m.Tasks[taskID].Finished {
+				responseChan <- 400
+				continue
+			}
+			responseChan <- 200
+			m.Tasks[taskID].Finished = true
+			if args.WorkType == "reduce" {
+				atomic.AddInt32(&m.succeedReduce, 1)
+			}
+			if args.WorkType == "map" {
+				atomic.AddInt32(&m.succeedMap, 1)
+				m.updateReduceLocations(args.Locations)
+				if int(atomic.LoadInt32(&m.succeedMap)) == m.MapNum {
+					m.addReduceTasks()
+				}
+			}
+		}
+	}
+
+}
+
+func (m *Master) updateReduceLocations(locations []string) {
+	for _, path := range locations {
+		tokens := strings.Split(path, "_")
+		index, err := strconv.Atoi(tokens[len(tokens)-1])
+		if err != nil {
+			log.Fatal("not right intermediate file path")
+		}
+		if _, ok := m.ReduceFileLocations[index]; !ok {
+			m.ReduceFileLocations[index] = make(map[string]bool)
+		}
+		m.ReduceFileLocations[index][path] = true
+		fmt.Printf("the reduce location files are %+v\n", m.ReduceFileLocations)
+	}
+}
+
+func (m *Master) addReduceTasks() {
+	for i := 0; i < m.ReducersNum; i++ {
+		locations := make([]string, 0, len(m.ReduceFileLocations[i]))
+		for k, _ := range m.ReduceFileLocations[i] {
+			locations = append(locations, k)
+		}
+		if len(locations) == 0 {
+			atomic.AddInt32(&m.succeedReduce, 1)
+			continue
+		}
+		temp := i
+		task := &Task{
+			ID:        "reduce_" + strconv.Itoa(i),
+			Type:      "reduce",
+			Partition: temp,
+			Locations: locations,
+		}
+		m.Tasks[task.ID] = task
 	}
 }
 
@@ -267,6 +283,9 @@ func MakeMaster(files []string, nReduce int) *Master {
 	m.availableWorkers = make(map[string]time.Time)
 	m.Assigment = make(map[string][]*Task)
 	m.ReduceFileLocations = make(map[int]map[string]bool)
+	m.assignmentChan = make(chan AssigmentChanRequest)
+	m.finishChan = make(chan TaskFinishRequest)
+	m.heartbeatChan = make(chan HeartbeatRequest)
 	for _, file := range files {
 		record := &Task{
 			ID:        file,
@@ -276,8 +295,6 @@ func MakeMaster(files []string, nReduce int) *Master {
 		m.Tasks[record.ID] = record
 	}
 	fmt.Printf("the task length is %v\n", len(m.Tasks))
-	go m.checkWorkers()
-	go m.checkTasks()
 	m.server()
 	return &m
 }
