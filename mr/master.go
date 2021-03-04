@@ -189,6 +189,7 @@ func (m *Master) EventLoop() {
 		case heartbeatRequest := <-m.heartbeatChan:
 			m.updateWorkerLive(heartbeatRequest.WorkerID)
 		case assignRequest := <-m.assignmentChan:
+			fmt.Printf("the request is comming from %v", assignRequest.request.WorkerID)
 			responseChan := *assignRequest.response
 			if len(m.Tasks) == 0 {
 				responseChan <- nil
@@ -282,6 +283,9 @@ func MakeMaster(files []string, nReduce int) *Master {
 	m.availableWorkers = make(map[string]time.Time)
 	m.Assigment = make(map[string][]*Task)
 	m.ReduceFileLocations = make(map[int]map[string]bool)
+	m.assignmentChan = make(chan AssigmentChanRequest)
+	m.finishChan = make(chan TaskFinishRequest)
+	m.heartbeatChan = make(chan HeartbeatRequest)
 	for _, file := range files {
 		record := &Task{
 			ID:        file,
