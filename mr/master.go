@@ -5,7 +5,6 @@ import (
 	"log"
 	"strconv"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -27,10 +26,6 @@ type Master struct {
 	MapNum          int
 	succeedMap      int32
 	succeedReduce   int32
-	taskMutex       sync.Mutex
-	workerMutex     sync.Mutex
-	assignmentMutex sync.Mutex
-	locationMutex   sync.Mutex
 	stopCheck       chan struct{}
 	assignmentChan  chan AssigmentChanRequest
 	finishChan      chan TaskFinishRequest
@@ -144,22 +139,6 @@ func (m *Master) checkWorkerOneTime() {
 	}
 }
 
-func (m *Master) checkWorkers() {
-
-	ticker := time.Tick(2 * time.Second)
-
-	for {
-		select {
-		case <-ticker:
-			m.workerMutex.Lock()
-			m.checkWorkerOneTime()
-			m.workerMutex.Unlock()
-		case <-m.stopCheck:
-			return
-		}
-	}
-}
-
 func (m *Master) checkTasksOneTime() {
 	for _, w := range m.Tasks {
 		if !w.Finished && w.Assigned && time.Now().Sub(w.StartTime) > TIME_OUT {
@@ -167,23 +146,6 @@ func (m *Master) checkTasksOneTime() {
 			w.updateAssigned(false)
 		}
 	}
-}
-
-func (m *Master) checkTasks() {
-
-	ticker := time.Tick(2 * time.Second)
-
-	for {
-		select {
-		case <-ticker:
-			m.taskMutex.Lock()
-			m.checkTasksOneTime()
-			m.taskMutex.Unlock()
-		case <-m.stopCheck:
-			return
-		}
-	}
-
 }
 
 //
