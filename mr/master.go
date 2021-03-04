@@ -13,7 +13,7 @@ import "net"
 import "net/rpc"
 import "net/http"
 
-const TIME_OUT  = 10 * time.Second
+const TIME_OUT = 10 * time.Second
 
 type Master struct {
 	// Your definitions here.
@@ -34,17 +34,16 @@ type Master struct {
 	stopCheck       chan struct{}
 	assignmentChan  chan AssigmentChanRequest
 	finishChan      chan TaskFinishRequest
-	heartbeatChan    chan HeartbeatRequest
-	taskChannel     chan *Task
+	heartbeatChan   chan HeartbeatRequest
 }
 
 type AssigmentChanRequest struct {
-	request AssignmentRequest
+	request  AssignmentRequest
 	response *chan *Task
 }
 
 type TaskFinishRequest struct {
-	request FinishRequest
+	request  FinishRequest
 	response *chan int
 }
 
@@ -92,10 +91,10 @@ func (m *Master) Finish(args *FinishRequest, reply *FinishResponse) error {
 	}
 	ticker := time.Tick(5 * time.Second)
 	select {
-	case r := <- response:
+	case r := <-response:
 		reply.Status = r
 		return nil
-	case <- ticker:
+	case <-ticker:
 		reply.Status = 500
 		return nil
 	}
@@ -109,25 +108,25 @@ func (m *Master) Assign(args *AssignmentRequest, reply *AssignmentReply) error {
 	ticker := time.Tick(5 * time.Second)
 	m.assignmentChan <- AssigmentChanRequest{request: *args, response: &response}
 	select {
-	   case w := <- response:
-	   	if w == nil {
-	   		reply.Status = 404
+	case w := <-response:
+		if w == nil {
+			reply.Status = 404
 		} else {
-		   reply.Status = 200
-		   reply.NReduce = m.ReducersNum
-		   reply.Record = Task{
-			   ID:        w.ID,
-			   WorkerID:  w.WorkerID,
-			   Type:      w.Type,
-			   Assigned:  w.Assigned,
-			   Finished:  w.Finished,
-			   Locations: w.Locations,
-			   StartTime: w.StartTime,
-			   Partition: w.Partition,
-		   }
-	   }
+			reply.Status = 200
+			reply.NReduce = m.ReducersNum
+			reply.Record = Task{
+				ID:        w.ID,
+				WorkerID:  w.WorkerID,
+				Type:      w.Type,
+				Assigned:  w.Assigned,
+				Finished:  w.Finished,
+				Locations: w.Locations,
+				StartTime: w.StartTime,
+				Partition: w.Partition,
+			}
+		}
 		return nil
-	case <- ticker:
+	case <-ticker:
 		reply.Status = 500
 		return nil
 	}
@@ -223,49 +222,49 @@ func (m *Master) EventLoop() {
 	taskTicker := time.Tick(2 * time.Second)
 	for {
 		select {
-		     case <- workerTicker:
-		     	m.checkWorkerOneTime()
-		     case <- taskTicker:
-		     	m.checkWorkerOneTime()
-		     case heartbeatRequest := <- m.heartbeatChan:
-		     	m.updateWorkerLive(heartbeatRequest.WorkerID)
-		     case assignRequest := <- m.assignmentChan:
-		     	responseChan := *assignRequest.response
-				 if len(m.Tasks) == 0 {
-				 	responseChan <- nil
-				 } else {
-					 w := m.getNextTask()
-					 if w == nil {
-					 	responseChan <- nil
-					 } else {
-						 w.StartTime = time.Now()
-						 w.updateAssigned(true)
-						 workerID := assignRequest.request.WorkerID
-						 w.WorkerID = workerID
-						 m.Assigment[workerID] = append(m.Assigment[workerID], w)
-						 responseChan <- w
-					 }
-				 }
-			case finishRequest := <- m.finishChan:
-				responseChan := *finishRequest.response
-				args := finishRequest.request
-				taskID := args.ID
-				if m.Tasks[taskID].Finished {
-					responseChan <- 400
+		case <-workerTicker:
+			m.checkWorkerOneTime()
+		case <-taskTicker:
+			m.checkWorkerOneTime()
+		case heartbeatRequest := <-m.heartbeatChan:
+			m.updateWorkerLive(heartbeatRequest.WorkerID)
+		case assignRequest := <-m.assignmentChan:
+			responseChan := *assignRequest.response
+			if len(m.Tasks) == 0 {
+				responseChan <- nil
+			} else {
+				w := m.getNextTask()
+				if w == nil {
+					responseChan <- nil
 				} else {
-                    responseChan <- 200
-					m.Tasks[taskID].Finished = true
-					if args.WorkType == "reduce" {
-						atomic.AddInt32(&m.succeedReduce, 1)
-					}
-					if args.WorkType == "map" {
-						atomic.AddInt32(&m.succeedMap, 1)
-						m.updateReduceLocations(args.Locations)
-						if int(atomic.LoadInt32(&m.succeedMap)) == m.MapNum {
-							m.addReduceTasks()
-						}
+					w.StartTime = time.Now()
+					w.updateAssigned(true)
+					workerID := assignRequest.request.WorkerID
+					w.WorkerID = workerID
+					m.Assigment[workerID] = append(m.Assigment[workerID], w)
+					responseChan <- w
+				}
+			}
+		case finishRequest := <-m.finishChan:
+			responseChan := *finishRequest.response
+			args := finishRequest.request
+			taskID := args.ID
+			if m.Tasks[taskID].Finished {
+				responseChan <- 400
+			} else {
+				responseChan <- 200
+				m.Tasks[taskID].Finished = true
+				if args.WorkType == "reduce" {
+					atomic.AddInt32(&m.succeedReduce, 1)
+				}
+				if args.WorkType == "map" {
+					atomic.AddInt32(&m.succeedMap, 1)
+					m.updateReduceLocations(args.Locations)
+					if int(atomic.LoadInt32(&m.succeedMap)) == m.MapNum {
+						m.addReduceTasks()
 					}
 				}
+			}
 		}
 	}
 
@@ -306,6 +305,7 @@ func (m *Master) addReduceTasks() {
 		m.Tasks[task.ID] = task
 	}
 }
+
 //
 // create a Master.
 // main/mrmaster.go calls this function.
@@ -321,7 +321,6 @@ func MakeMaster(files []string, nReduce int) *Master {
 	m.availableWorkers = make(map[string]time.Time)
 	m.Assigment = make(map[string][]*Task)
 	m.ReduceFileLocations = make(map[int]map[string]bool)
-	m.taskChannel = make(chan *Task, 200)
 	for _, file := range files {
 		record := &Task{
 			ID:        file,
@@ -329,7 +328,6 @@ func MakeMaster(files []string, nReduce int) *Master {
 			Locations: []string{file},
 		}
 		m.Tasks[record.ID] = record
-		m.taskChannel <- record
 	}
 	fmt.Printf("the task length is %v\n", len(m.Tasks))
 	m.server()
