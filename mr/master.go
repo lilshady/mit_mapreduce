@@ -240,6 +240,18 @@ func (m *Master) Assign(args *AssignmentRequest, reply *AssignmentReply) error {
 	//return nil
 }
 
+func (m *Master) checkWorkerOneTime() {
+	for worker, updateTime := range m.availableWorkers {
+		if time.Now().Sub(updateTime) > TIME_OUT {
+			fmt.Printf("removing the worker %s at %+v and its update time is %+v\n", worker, time.Now(), updateTime)
+			delete(m.availableWorkers, worker)
+			for _, w := range m.Assigment[worker] {
+				w.updateAssigned(false)
+			}
+		}
+	}
+}
+
 func (m *Master) checkWorkers() {
 
 	ticker := time.Tick(2 * time.Second)
@@ -248,18 +260,19 @@ func (m *Master) checkWorkers() {
 		select {
 		case <-ticker:
 			m.workerMutex.Lock()
-			for worker, updateTime := range m.availableWorkers {
-				if time.Now().Sub(updateTime) > TIME_OUT {
-					fmt.Printf("removing the worker %s at %+v and its update time is %+v\n", worker, time.Now(), updateTime)
-					delete(m.availableWorkers, worker)
-					for _, w := range m.Assigment[worker] {
-						w.updateAssigned(false)
-					}
-				}
-			}
+			m.checkWorkerOneTime()
 			m.workerMutex.Unlock()
 		case <-m.stopCheck:
 			return
+		}
+	}
+}
+
+func (m *Master) checkTasksOneTime() {
+	for _, w := range m.Tasks {
+		if !w.Finished && w.Assigned && time.Now().Sub(w.StartTime) > TIME_OUT {
+			fmt.Printf("updating the task %s to unassigned %+v and its start time is %+v\n", w.ID, time.Now(), w.StartTime)
+			w.updateAssigned(false)
 		}
 	}
 }
@@ -272,12 +285,7 @@ func (m *Master) checkTasks() {
 		select {
 		case <-ticker:
 			m.taskMutex.Lock()
-			for _, w := range m.Tasks {
-				if !w.Finished && w.Assigned && time.Now().Sub(w.StartTime) > TIME_OUT {
-					fmt.Printf("updating the task %s to unassigned %+v and its start time is %+v\n", w.ID, time.Now(), w.StartTime)
-					w.updateAssigned(false)
-				}
-			}
+			m.checkTasksOneTime()
 			m.taskMutex.Unlock()
 		case <-m.stopCheck:
 			return
@@ -322,6 +330,10 @@ func (m *Master) EventLoop() {
 	taskTicker := time.Tick(2 * time.Second)
 	for {
 		select {
+		     case <- workerTicker:
+		     	m.checkWorkerOneTime()
+		     case <- taskTicker:
+		     	m.checkWorkerOneTime()
 		     case heartbeatRequest := <- m.heartbeatChan:
 		     	m.updateWorkerLive(heartbeatRequest.WorkerID)
 		     case assignRequest := <- m.assignmentChan:
@@ -427,8 +439,8 @@ func MakeMaster(files []string, nReduce int) *Master {
 		m.taskChannel <- record
 	}
 	fmt.Printf("the task length is %v\n", len(m.Tasks))
-	go m.checkWorkers()
-	go m.checkTasks()
+	//go m.checkWorkers()
+	//go m.checkTasks()
 	m.server()
 	return &m
 }
