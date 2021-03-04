@@ -22,14 +22,14 @@ type Master struct {
 	availableWorkers    map[string]time.Time
 	ReduceFileLocations map[int]map[string]bool
 
-	ReducersNum     int
-	MapNum          int
-	succeedMap      int32
-	succeedReduce   int32
-	stopCheck       chan struct{}
-	assignmentChan  chan AssigmentChanRequest
-	finishChan      chan TaskFinishRequest
-	heartbeatChan   chan HeartbeatRequest
+	ReducersNum    int
+	MapNum         int
+	succeedMap     int32
+	succeedReduce  int32
+	stopCheck      chan struct{}
+	assignmentChan chan AssigmentChanRequest
+	finishChan     chan TaskFinishRequest
+	heartbeatChan  chan HeartbeatRequest
 }
 
 type AssigmentChanRequest struct {
@@ -43,8 +43,6 @@ type TaskFinishRequest struct {
 }
 
 func (m *Master) getNextTask() *Task {
-	//m.taskMutex.Lock()
-	//defer m.taskMutex.Unlock()
 	for _, v := range m.Tasks {
 		if !v.Finished && !v.getAssigned() {
 			v.updateAssigned(true)
@@ -194,37 +192,38 @@ func (m *Master) EventLoop() {
 			responseChan := *assignRequest.response
 			if len(m.Tasks) == 0 {
 				responseChan <- nil
-			} else {
-				w := m.getNextTask()
-				if w == nil {
-					responseChan <- nil
-				} else {
-					w.StartTime = time.Now()
-					w.updateAssigned(true)
-					workerID := assignRequest.request.WorkerID
-					w.WorkerID = workerID
-					m.Assigment[workerID] = append(m.Assigment[workerID], w)
-					responseChan <- w
-				}
+				continue
 			}
+			w := m.getNextTask()
+			if w == nil {
+				responseChan <- nil
+				continue
+			}
+			w.StartTime = time.Now()
+			w.updateAssigned(true)
+			workerID := assignRequest.request.WorkerID
+			w.WorkerID = workerID
+			m.Assigment[workerID] = append(m.Assigment[workerID], w)
+			responseChan <- w
+
 		case finishRequest := <-m.finishChan:
 			responseChan := *finishRequest.response
 			args := finishRequest.request
 			taskID := args.ID
 			if m.Tasks[taskID].Finished {
 				responseChan <- 400
-			} else {
-				responseChan <- 200
-				m.Tasks[taskID].Finished = true
-				if args.WorkType == "reduce" {
-					atomic.AddInt32(&m.succeedReduce, 1)
-				}
-				if args.WorkType == "map" {
-					atomic.AddInt32(&m.succeedMap, 1)
-					m.updateReduceLocations(args.Locations)
-					if int(atomic.LoadInt32(&m.succeedMap)) == m.MapNum {
-						m.addReduceTasks()
-					}
+				continue
+			}
+			responseChan <- 200
+			m.Tasks[taskID].Finished = true
+			if args.WorkType == "reduce" {
+				atomic.AddInt32(&m.succeedReduce, 1)
+			}
+			if args.WorkType == "map" {
+				atomic.AddInt32(&m.succeedMap, 1)
+				m.updateReduceLocations(args.Locations)
+				if int(atomic.LoadInt32(&m.succeedMap)) == m.MapNum {
+					m.addReduceTasks()
 				}
 			}
 		}
