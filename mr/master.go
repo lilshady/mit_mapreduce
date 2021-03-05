@@ -185,7 +185,7 @@ func (m *Master) EventLoop() {
 		case <-workerTicker:
 			m.checkWorkerOneTime()
 		case <-taskTicker:
-			m.checkWorkerOneTime()
+			m.checkTasksOneTime()
 		case heartbeatRequest := <-m.heartbeatChan:
 			m.updateWorkerLive(heartbeatRequest.WorkerID)
 		case assignRequest := <-m.assignmentChan:
